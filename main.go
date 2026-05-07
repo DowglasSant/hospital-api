@@ -34,7 +34,7 @@ func main() {
 
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("erro ao abrir conexão:", err)
 	}
 
 	err = db.Ping()
@@ -42,11 +42,13 @@ func main() {
 		log.Fatal("DB connection failed:", err)
 	}
 
+	log.Println("✅ Conectado ao banco com sucesso")
+
 	createTable()
 
 	http.HandleFunc("/patients", patientsHandler)
 
-	log.Println("Server running on :8080")
+	log.Println("🚀 Server running on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
@@ -61,18 +63,25 @@ func createTable() {
 
 	_, err := db.Exec(query)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("erro ao criar tabela:", err)
 	}
+
+	log.Println("📦 tabela patients pronta")
 }
 
 func patientsHandler(w http.ResponseWriter, r *http.Request) {
+
+	w.Header().Set("Content-Type", "application/json")
+
 	switch r.Method {
 
+	// ================= CREATE =================
 	case http.MethodPost:
 		var patient Patient
 
 		err := json.NewDecoder(r.Body).Decode(&patient)
 		if err != nil {
+			log.Println("❌ erro ao decodificar JSON:", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -84,34 +93,54 @@ func patientsHandler(w http.ResponseWriter, r *http.Request) {
 		).Scan(&patient.ID)
 
 		if err != nil {
+			log.Println("❌ erro ao inserir paciente:", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
+		log.Printf("✅ paciente criado: id=%d name=%s cpf=%s\n",
+			patient.ID, patient.Name, patient.CPF)
+
 		json.NewEncoder(w).Encode(patient)
 
+	// ================= LIST =================
 	case http.MethodGet:
 
 		rows, err := db.Query("SELECT id, name, cpf FROM patients")
 		if err != nil {
+			log.Println("❌ erro no SELECT:", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		defer rows.Close()
 
-		var patients []Patient
+		patients := make([]Patient, 0)
 
 		for rows.Next() {
 			var patient Patient
-			rows.Scan(&patient.ID, &patient.Name, &patient.CPF)
+
+			err := rows.Scan(&patient.ID, &patient.Name, &patient.CPF)
+			if err != nil {
+				log.Println("❌ erro no scan:", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+
 			patients = append(patients, patient)
 		}
 
-		w.Header().Set("Content-Type", "application/json")
+		if err := rows.Err(); err != nil {
+			log.Println("❌ erro nas rows:", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("📄 listagem de pacientes retornada (%d registros)\n", len(patients))
+
 		json.NewEncoder(w).Encode(patients)
 
 	default:
+		log.Println("⚠️ método não permitido:", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
