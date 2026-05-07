@@ -6,7 +6,7 @@ import (
 	"log"
 	"net/http"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/lib/pq"
 )
 
 type Patient struct {
@@ -20,9 +20,16 @@ var db *sql.DB
 func main() {
 	var err error
 
-	db, err = sql.Open("sqlite3", "./hospital.db")
+	connStr := "host=localhost port=5432 user=admin password=1234 dbname=hospital sslmode=disable"
+
+	db, err = sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	err = db.Ping()
+	if err != nil {
+		log.Fatal("DB connection failed:", err)
 	}
 
 	createTable()
@@ -36,7 +43,7 @@ func main() {
 func createTable() {
 	query := `
 	CREATE TABLE IF NOT EXISTS patients (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		id SERIAL PRIMARY KEY,
 		name TEXT NOT NULL,
 		cpf TEXT NOT NULL UNIQUE
 	);
@@ -60,19 +67,16 @@ func patientsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		result, err := db.Exec(
-			"INSERT INTO patients(name, cpf) VALUES(?, ?)",
+		err = db.QueryRow(
+			"INSERT INTO patients(name, cpf) VALUES($1, $2) RETURNING id",
 			patient.Name,
 			patient.CPF,
-		)
+		).Scan(&patient.ID)
 
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
-		id, _ := result.LastInsertId()
-		patient.ID = int(id)
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(patient)
@@ -84,16 +88,13 @@ func patientsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-
 		defer rows.Close()
 
 		var patients []Patient
 
 		for rows.Next() {
 			var patient Patient
-
 			rows.Scan(&patient.ID, &patient.Name, &patient.CPF)
-
 			patients = append(patients, patient)
 		}
 
