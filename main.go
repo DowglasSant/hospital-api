@@ -3,8 +3,10 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	_ "github.com/lib/pq"
 )
@@ -20,7 +22,15 @@ var db *sql.DB
 func main() {
 	var err error
 
-	connStr := "host=localhost port=5432 user=admin password=1234 dbname=hospital sslmode=disable"
+	password := os.Getenv("DB_PASSWORD")
+	if password == "" {
+		log.Fatal("DB_PASSWORD não definida")
+	}
+
+	connStr := fmt.Sprintf(
+		"host=postgres-homelab port=5432 user=admin password=%s dbname=hospital sslmode=disable",
+		password,
+	)
 
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
